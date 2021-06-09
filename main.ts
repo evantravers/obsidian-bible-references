@@ -1,7 +1,9 @@
 import { App, Modal, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
 interface MyPluginSettings {
-  versepattern: string;
+  bibleFolder: string;
+  customLinkScheme: string;
+  foldersEnabled: boolean;
 }
 
 function fixBibleReferences(app) {
@@ -104,7 +106,41 @@ function fixBibleReferences(app) {
   }
 
   let wikiBible = function(b: { book: any; chapter: any; verse: any; ref: any; }) {
-    return `[[ESV/${b.book}/${b.book}-${b.chapter}${prefix(b.verse, "#")}|${b.ref}]]`;
+    /*
+      Replaces a custom pattern like "{{book}}/{{book}}-{{chapter}}#{{verse}}|{{input}}"
+      with the variables stored.
+    */
+     
+    // There is surely a prettier way to do this – maybe objects?
+    let toReplace = ["{{book}}", "{{chapter}}", "{{verse}}", "{{input}}"]
+    let replaceWith = [`${b.book}`, `${b.chapter}`, `${b.verse}`, `${b.ref}`]
+    
+
+    for (let i = 0; i <= toReplace.length; i++){
+      if (i === 0) {
+        // For the first iteration, pull the custom pattern in the settings
+        var linkPattern = this.plugin.settings.customLinkScheme;
+      }
+      // Replace custom patterns with the variables
+      var linkPattern:any = linkPattern.replaceAll(toReplace[i], replaceWith[i])
+    }
+
+    if (this.plugin.settings.foldersEnabled && this.plugin.settings.bibleFolder !== '') {
+      // If folders are enabled, add the folder in front
+
+      // Delete unnecessary '/' if that's the first character
+      let bibleFolder:any = this.plugin.settings.bibleFolder
+      bibleFolder.value = bibleFolder.replace(/^\//, '');
+
+      // Prefixes the link pattern with the bible folder and the name of the book
+      return bibleFolder + "/" + `${b.book}/` + linkPattern
+
+    } else {
+      // If folders aren't enabled, don't add a folder
+      return linkPattern
+
+      }
+    
   }
 
   let view = app.workspace.activeLeaf.view;
@@ -120,7 +156,9 @@ function fixBibleReferences(app) {
 }
 
 const DEFAULT_SETTINGS: MyPluginSettings = {
-  versepattern: 'default'
+  customLinkScheme: 'default',
+  foldersEnabled: false,
+  bibleFolder: 'default'
 }
 
 export default class MyPlugin extends Plugin {
@@ -169,17 +207,47 @@ class SampleSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
-
+ 
     new Setting(containerEl)
-      .setName('Verse Pattern')
-      .setDesc('Enter your verse pattern')
+      .setName("Include folder in links.")
+      .setDesc("Turn folders (e.g. [[ESV/…]]) in links on or off.")
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.settings.foldersEnabled);
+        toggle.onChange(async (value) => {
+          console.log('Folders in links: ' + value);
+          this.plugin.settings.foldersEnabled = value;
+          await this.plugin.saveSettings();
+          // Force refresh
+          this.display();
+        });
+      });
+
+    if (this.plugin.settings.foldersEnabled){
+    new Setting(containerEl)
+      .setName('Path to Bible Folder')
+      .setDesc('Enter the path to the Bible Folder.')
       .addText(text => text
-        .setPlaceholder('Verse pattern')
-        .setValue('this.plugin.settings.versepattern')
+        .setPlaceholder('BibleFolder')
+        .setValue('')
         .onChange(async (value) => {
-          console.log('Secret: ' + value);
-          this.plugin.settings.versepattern = value;
+          console.log('Bible Folder: ' + value);
+          this.plugin.settings.bibleFolder = value;
           await this.plugin.saveSettings();
         }));
+    }
+   
+    new Setting(containerEl)
+      .setName('Bible Reference pattern')
+      .setDesc('Enter the pattern that should replace the input. Supported: {{book}}, {{chapter}}, {{verse}}, {{endverse}}, {{input}}.')
+      .addText(text => text
+        .setPlaceholder('Link pattern')
+        .setValue('{{book}}/{{book}}-{{chapter}}#{{verse}}|{{input}}')
+        .onChange(async (value) => {
+          console.log('Linkpattern: ' + value);
+          this.plugin.settings.customLinkScheme = value;
+          await this.plugin.saveSettings();
+        }));
+
+    }
   }
-}
+
